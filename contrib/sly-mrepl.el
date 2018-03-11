@@ -81,6 +81,36 @@ emptied. See also `sly-mrepl-hook'")
 This variables behaves like `comint-preoutput-filter-functions',
 for output printed to the REPL (not for evaluation results)")
 
+
+;; PK change
+;; Add hooks for the filter 
+(defvar sly-repl-output-chunks nil)
+(defun sly-repl-filter-long-lines (string)
+  (push string sly-repl-output-chunks)
+  (if (not (string-match comint-prompt-regexp string))
+      ""
+    (let* ((out (mapconcat #'identity (nreverse sly-repl-output-chunks) ""))
+           (split-str (split-string out "\n"))
+           (max-len 100);; (* 2 (window-width)))
+           (disp-left (round (* (/ 1.0 3) (window-width))))
+           (disp-right disp-left)
+           (truncated (mapconcat
+                       (lambda (x)
+                         (if (> (length x) max-len)
+                             (concat (substring x 0 disp-left) " ... (*TRUNC*) ... " (substring x (- disp-right)))
+                           x))
+                       (remove-if #'(lambda (line)
+                                      (string-match-p (regexp-quote "no-entry") line))
+                                  split-str)
+                       "\n")))
+      (setq sly-repl-output-chunks nil)
+    truncated)))
+
+(add-hook 'sly-mrepl-output-filter-functions #'sly-repl-filter-long-lines)
+(add-hook 'comint-preoutput-filter-functions #'sly-repl-filter-long-lines)
+
+
+
 (defvar sly-mrepl-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET")     'sly-mrepl-return)
@@ -194,6 +224,8 @@ for output printed to the REPL (not for evaluation results)")
 
 (sly-define-channel-method listener :write-values (results)
   (with-current-buffer (sly-channel-get self 'buffer)
+    ;; PK change 
+    (sly-mrepl--insert-note (format "=> %s" results))
     (sly-mrepl--insert-results results)))
 
 (sly-define-channel-method listener :evaluation-aborted (&optional condition)
